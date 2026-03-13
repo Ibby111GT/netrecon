@@ -1,0 +1,6 @@
+# NetRecon only uses the Python standard library.
+# No third-party packages required.
+#
+# Optional extras for richer output:
+# colorama>=0.4.6   # Windows ANSI colour support
+# tqdm>=4.66        # progress bars on large CIDR sweeps
