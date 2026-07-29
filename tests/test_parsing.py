@@ -1,8 +1,14 @@
 """Everything that turns user input into a scan plan. No sockets in here."""
 
+import argparse
+import contextlib
+import io
+import math
 import unittest
 
-from config import MIN_CIDR_PREFIX
+import net_utils
+import scanner
+from config import CONNECT_TIMEOUT, MIN_CIDR_PREFIX, TIMEOUT_LIMIT
 from net_utils import expand_cidr, parse_ports, validate_target
 
 
@@ -107,6 +113,126 @@ class ValidateTargetTests(unittest.TestCase):
     def test_leading_hyphen_rejected(self):
         with self.assertRaises(ValueError):
             validate_target("-nope.example.com")
+
+
+class TimeoutOptionTests(unittest.TestCase):
+    """--timeout is validated before a single socket is opened.
+
+    argparse rejects non-numeric input on its own. What it accepts happily is
+    nan, inf, and anything <= 0 — and 0 is the one that matters, because it
+    does not crash. It makes every port report closed, so the scan returns a
+    confident all-clear that is entirely wrong.
+    """
+
+    def plan(self, timeout):
+        """Run the planner with only --timeout varied. Never opens a socket."""
+        args = argparse.Namespace(
+            target="127.0.0.1", ports="22", full=False,
+            threads=8, timeout=timeout, output=None, demo=False,
+        )
+        return scanner.plan_scan(args)
+
+    def assert_rejected(self, timeout):
+        # fail() writes the explanation to stderr; swallow it so a passing run
+        # stays quiet, but assert the message actually names the option.
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as caught:
+                self.plan(timeout)
+        # fail() exits 2 for every user error, same as --threads and --ports
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("--timeout", stderr.getvalue())
+
+    def test_zero_rejected(self):
+        # The dangerous case: a 0s budget silently reports everything closed.
+        self.assert_rejected(0.0)
+
+    def test_negative_rejected(self):
+        self.assert_rejected(-1.0)
+
+    def test_nan_rejected(self):
+        self.assert_rejected(float("nan"))
+
+    def test_infinity_rejected(self):
+        self.assert_rejected(float("inf"))
+
+    def test_negative_infinity_rejected(self):
+        self.assert_rejected(float("-inf"))
+
+    def test_above_limit_rejected(self):
+        self.assert_rejected(TIMEOUT_LIMIT + 1)
+
+    def test_small_positive_accepted(self):
+        target, hosts, ports, services = self.plan(0.001)
+        self.assertEqual(hosts, ["127.0.0.1"])
+        self.assertEqual(services, [])
+
+    def test_limit_itself_accepted(self):
+        self.plan(TIMEOUT_LIMIT)
+
+    def test_platform_default_is_positive_and_finite(self):
+        self.assertTrue(math.isfinite(CONNECT_TIMEOUT))
+        self.assertGreater(CONNECT_TIMEOUT, 0)
+
+    def test_rejected_before_demo_listeners_start(self):
+        """A bad timeout must not leave demo sockets orphaned."""
+        args = argparse.Namespace(
+            target=None, ports=None, full=False,
+            threads=8, timeout=-1.0, output=None, demo=True,
+        )
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as caught:
+                scanner.plan_scan(args)
+        self.assertEqual(caught.exception.code, 2)
+
+
+class TimeoutIsAppliedTests(unittest.TestCase):
+    """The value reaches the socket layer rather than being parsed and dropped."""
+
+    def test_scan_port_uses_the_supplied_timeout(self):
+        recorded = []
+
+        class FakeSocket:
+            def settimeout(self, value):
+                recorded.append(value)
+
+            def connect(self, address):
+                raise ConnectionRefusedError
+
+            def close(self):
+                pass
+
+        original = net_utils.socket.socket
+        net_utils.socket.socket = lambda *a, **kw: FakeSocket()
+        try:
+            result = net_utils.scan_port("127.0.0.1", 9, timeout=2.5)
+        finally:
+            net_utils.socket.socket = original
+
+        self.assertEqual(recorded, [2.5])
+        self.assertEqual(result["state"], "closed")
+
+    def test_scan_port_falls_back_to_the_platform_default(self):
+        recorded = []
+
+        class FakeSocket:
+            def settimeout(self, value):
+                recorded.append(value)
+
+            def connect(self, address):
+                raise ConnectionRefusedError
+
+            def close(self):
+                pass
+
+        original = net_utils.socket.socket
+        net_utils.socket.socket = lambda *a, **kw: FakeSocket()
+        try:
+            net_utils.scan_port("127.0.0.1", 9)
+        finally:
+            net_utils.socket.socket = original
+
+        self.assertEqual(recorded, [CONNECT_TIMEOUT])
 
 
 if __name__ == "__main__":

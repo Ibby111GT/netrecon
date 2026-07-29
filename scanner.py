@@ -12,11 +12,13 @@ Only scan hosts you own or have written permission to test.
 """
 
 import argparse
+import math
 import sys
 import time
 
 import demo
-from config    import COMMON_PORTS, MAX_THREADS, THREAD_LIMIT
+from config    import (COMMON_PORTS, CONNECT_TIMEOUT, MAX_THREADS,
+                       THREAD_LIMIT, TIMEOUT_LIMIT)
 from net_utils import (expand_cidr, os_hint, parse_ports, resolve_host,
                        scan_host, validate_target)
 from output    import (print_banner, print_host_header, print_result,
@@ -37,6 +39,9 @@ def parse_args():
                    help="Scan all 65535 ports (slow)")
     p.add_argument("--threads", type=int, default=MAX_THREADS,
                    help=f"Concurrent connections, 1-{THREAD_LIMIT} (default: {MAX_THREADS})")
+    p.add_argument("--timeout", type=float, default=CONNECT_TIMEOUT, metavar="SEC",
+                   help=f"Per-port connect budget in seconds (default: {CONNECT_TIMEOUT} "
+                        "on this platform). Too low and closed ports look filtered.")
     p.add_argument("--output", default=None, metavar="FILE",
                    help="Save results to JSON file")
     p.add_argument("--demo",   action="store_true",
@@ -66,6 +71,20 @@ def plan_scan(args):
     """
     if args.threads < 1 or args.threads > THREAD_LIMIT:
         fail(f"--threads must be between 1 and {THREAD_LIMIT} (got {args.threads})")
+
+    # Checked here, before demo listeners are started, so a bad value never
+    # leaves sockets behind. argparse already rejects non-numeric input; what
+    # it happily accepts is nan, inf, and anything <= 0. A zero or negative
+    # budget is the dangerous one: it does not crash, it makes every port
+    # report closed, so the scan returns a confident and completely wrong
+    # all-clear.
+    if not math.isfinite(args.timeout):
+        fail(f"--timeout must be a finite number of seconds (got {args.timeout})")
+    if args.timeout <= 0:
+        fail(f"--timeout must be greater than 0 (got {args.timeout}). "
+             f"A zero or negative budget reports every port as closed.")
+    if args.timeout > TIMEOUT_LIMIT:
+        fail(f"--timeout must be at most {TIMEOUT_LIMIT:g} seconds (got {args.timeout:g})")
 
     if args.demo:
         if args.target and args.target not in demo.LOOPBACK:
@@ -108,7 +127,7 @@ def main():
             ip, hostname = resolved
 
             print_host_header(ip, hostname)
-            results = scan_host(ip, ports, threads=args.threads)
+            results = scan_host(ip, ports, threads=args.threads, timeout=args.timeout)
             for r in results:
                 print_result(r)
 

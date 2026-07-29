@@ -16,6 +16,10 @@ MAX_THREADS     = 200
 # upper bound on --threads; past this you are just thrashing the scheduler
 THREAD_LIMIT = 1000
 
+# upper bound on --timeout. Generous enough for a genuinely slow link, low
+# enough that a fat-fingered 1e9 is refused instead of looking like a hang.
+TIMEOUT_LIMIT = 300.0
+
 # widest CIDR block we will expand. /22 is 1024 addresses, which covers a
 # realistic subnet sweep — anything wider is nearly always a typo, and
 # expanding it looks exactly like the tool has hung.
