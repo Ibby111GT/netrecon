@@ -5,6 +5,14 @@ CONNECT_TIMEOUT = 1.0
 BANNER_TIMEOUT  = 2.0
 MAX_THREADS     = 200
 
+# upper bound on --threads; past this you are just thrashing the scheduler
+THREAD_LIMIT = 1000
+
+# widest CIDR block we will expand. /22 is 1024 addresses, which covers a
+# realistic subnet sweep — anything wider is nearly always a typo, and
+# expanding it looks exactly like the tool has hung.
+MIN_CIDR_PREFIX = 22
+
 # top services worth checking on most engagements
 COMMON_PORTS = {
     21:    "FTP",
@@ -27,11 +35,3 @@ COMMON_PORTS = {
     9200:  "Elasticsearch",
     27017: "MongoDB",
 }
-
-# quick sanity check on private ranges (skip these by default unless --include-private)
-PRIVATE_RANGES = [
-    ("10.0.0.0",     "10.255.255.255"),
-    ("172.16.0.0",   "172.31.255.255"),
-    ("192.168.0.0",  "192.168.255.255"),
-    ("127.0.0.0",    "127.255.255.255"),
-]
