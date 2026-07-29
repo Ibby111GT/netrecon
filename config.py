@@ -1,7 +1,15 @@
 # port definitions and scan defaults
 # pulled these out of scanner.py to keep things clean
 
-CONNECT_TIMEOUT = 1.0
+import sys
+
+# Linux sends an RST for a closed port on the first SYN, so ConnectionRefusedError
+# lands in a few milliseconds. Windows retransmits the SYN before surfacing
+# WSAECONNREFUSED — measured on loopback at 2.011s, against a TimeoutError at
+# 1.005s — so a 1.0s budget expires first and every closed port is misreported as
+# "filtered". That inverts the tool's headline claim, so the default is
+# platform-dependent. Override per run with --timeout.
+CONNECT_TIMEOUT = 3.0 if sys.platform == "win32" else 1.0
 BANNER_TIMEOUT  = 2.0
 MAX_THREADS     = 200
 
