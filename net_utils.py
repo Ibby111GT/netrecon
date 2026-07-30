@@ -27,10 +27,20 @@ def validate_target(target):
         raise ValueError("no target given")
 
     try:
-        ipaddress.ip_network(target, strict=False)
-        return target
+        parsed = ipaddress.ip_network(target, strict=False)
     except ValueError:
-        pass
+        parsed = None
+
+    if parsed is not None:
+        # scanning is AF_INET-only, so an IPv6 target would otherwise parse
+        # cleanly here and then silently degrade to "Could not resolve ::1"
+        # once the AF_INET socket refused it. Fail fast with something honest.
+        if parsed.version == 6:
+            raise ValueError(
+                "IPv6 targets are not supported: netrecon currently scans "
+                "IPv4 only."
+            )
+        return target
 
     if _NUMERIC_RE.match(target):
         raise ValueError(f"'{target}' is not a valid IP address or CIDR range")

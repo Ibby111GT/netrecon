@@ -6,6 +6,7 @@ A multi-threaded TCP port scanner with banner grabbing, service identification, 
 
 - Multi-threaded concurrent scanning
 - CIDR range expansion, capped at /22 so a typo cannot start a 16-million-host sweep
+- IPv4 only — an IPv6 target is rejected up front with a clear message, rather than silently failing to resolve mid-scan
 - Service banner grabbing and service-name lookup for well-known ports
 - Distinguishes open, closed and filtered (no response) ports
 - OS hints based on the mix of open ports — a guess, not a fingerprint
@@ -56,6 +57,9 @@ $ python scanner.py -t 10.0.0.0/8
 
 $ python scanner.py -t 127.0.0.1 --timeout 0
 [!] --timeout must be greater than 0 (got 0.0). A zero or negative budget reports every port as closed.
+
+$ python scanner.py -t ::1
+[!] IPv6 targets are not supported: netrecon currently scans IPv4 only.
 ```
 
 ### Why `--timeout` defaults differently per platform

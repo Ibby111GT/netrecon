@@ -114,6 +114,24 @@ class ValidateTargetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_target("-nope.example.com")
 
+    def test_ipv6_loopback_rejected_with_clear_message(self):
+        # ipaddress parses ::1 happily, but the scanner is AF_INET-only, so it
+        # has to be turned away here rather than failing to resolve later
+        with self.assertRaises(ValueError) as ctx:
+            validate_target("::1")
+        self.assertIn("IPv6 targets are not supported", str(ctx.exception))
+
+    def test_ipv6_global_address_rejected_with_clear_message(self):
+        with self.assertRaises(ValueError) as ctx:
+            validate_target("2001:db8::1")
+        self.assertIn("IPv4 only", str(ctx.exception))
+
+    def test_ipv4_literal_hostname_and_cidr_still_accepted(self):
+        # the IPv6 guard must not turn away anything it used to accept
+        self.assertEqual(validate_target("127.0.0.1"), "127.0.0.1")
+        self.assertEqual(validate_target("10.0.0.0/24"), "10.0.0.0/24")
+        self.assertEqual(validate_target("localhost"), "localhost")
+
 
 class TimeoutOptionTests(unittest.TestCase):
     """--timeout is validated before a single socket is opened.
