@@ -7,6 +7,7 @@ _RESET  = "\033[0m"
 _BOLD   = "\033[1m"
 _GREEN  = "\033[32m"
 _YELLOW = "\033[33m"
+_RED    = "\033[31m"
 _CYAN   = "\033[36m"
 _DIM    = "\033[2m"
 
@@ -50,12 +51,18 @@ def print_result(result):
         print(line)
     elif state == "filtered":
         print(f"  {port:<6} {_c(_YELLOW, label)}  {service}")
+    elif state == "error":
+        # the probe itself failed, so the port's real state is unknown — never
+        # silently drop it the way a plain closed port is dropped
+        detail = result.get("error") or "unexpected socket error"
+        print(f"  {port:<6} {_c(_RED, label)}  {service}  {_c(_DIM, detail[:60])}")
     # closed ports are suppressed by default
 
 
 def print_summary(target, results, elapsed):
     open_ports = [r for r in results if r["state"] == "open"]
     filtered   = [r for r in results if r["state"] == "filtered"]
+    errored    = [r for r in results if r["state"] == "error"]
     print()
     print(_c(_BOLD, "-" * 56))
     print(f"  Scan complete in {elapsed:.2f}s")
@@ -66,6 +73,11 @@ def print_summary(target, results, elapsed):
         print(f"  Ports      : {nums}")
     if filtered:
         print(f"  Filtered   : {_c(_YELLOW, str(len(filtered)))}")
+    if errored:
+        # the probe failed on these, so their state is unknown, not clear
+        print(f"  Errored    : {_c(_RED, str(len(errored)))}")
+        nums = ", ".join(str(r["port"]) for r in errored)
+        print(f"  Errors     : {nums}")
     print(_c(_BOLD, "-" * 56))
 
 
@@ -76,6 +88,7 @@ def save_json(results, path, target, elapsed):
         "elapsed_sec":    round(elapsed, 3),
         "open_count":     sum(1 for r in results if r["state"] == "open"),
         "filtered_count": sum(1 for r in results if r["state"] == "filtered"),
+        "error_count":    sum(1 for r in results if r["state"] == "error"),
         "results":        results,
     }
     with open(path, "w") as fh:

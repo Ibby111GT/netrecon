@@ -109,14 +109,28 @@ def grab_banner(sock, port):
         return None
 
 
+def _error_detail(exc):
+    """Human-readable errno/strerror for an unexpected socket failure."""
+    parts = []
+    if exc.errno is not None:
+        parts.append(errno.errorcode.get(exc.errno, str(exc.errno)))
+    if exc.strerror:
+        parts.append(exc.strerror)
+    return ": ".join(parts) or str(exc)
+
+
 def scan_port(host, port, timeout=None):
     """Probes one TCP port.
 
-    The three states are distinguished by *how* the connection fails, so the
-    branches below are ordered narrowest first:
+    Most states are distinguished by *how* the connection fails:
       refused      -> something answered "nothing is listening" -> closed
       timed out    -> nothing answered at all                   -> filtered
       unreachable  -> the network rejected the route            -> unreachable
+
+    Any *other* OSError (EMFILE from running out of file descriptors at a high
+    --threads, an unexpected permission error) is not evidence about the port
+    at all. It becomes an 'error' state carrying the errno detail, so a probe
+    that never actually completed can never masquerade as a clean 'closed'.
     """
     result = {
         "host":    host,
@@ -138,10 +152,16 @@ def scan_port(host, port, timeout=None):
         # no answer at all — typically a firewall dropping the packet
         result["state"] = "filtered"
     except OSError as exc:
-        # ENETUNREACH / EHOSTUNREACH — the route failed, which is not the same
-        # as a closed port and should not be reported as one
         if exc.errno in (errno.ENETUNREACH, errno.EHOSTUNREACH):
+            # the route failed, which is not the same as a closed port and
+            # should not be reported as one
             result["state"] = "unreachable"
+        else:
+            # something we did not anticipate went wrong before we could learn
+            # anything about the port. Surface it instead of defaulting to the
+            # 'closed' all-clear the result started with.
+            result["state"] = "error"
+            result["error"] = _error_detail(exc)
     finally:
         s.close()
     return result

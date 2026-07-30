@@ -93,7 +93,7 @@ every port look closed and hands back a confident, wrong all-clear.
 | Column | Meaning |
 | --- | --- |
 | `36289` | The port number — which numbered door answered. |
-| `OPEN` | The state. `OPEN` means something is listening. `FILTERED` means no answer at all, usually a firewall. Closed ports are not printed; on a normal scan nearly everything is closed and listing them would bury the result. |
+| `OPEN` | The state. `OPEN` means something is listening. `FILTERED` means no answer at all, usually a firewall. `ERROR` means the probe itself failed — for example the scanner ran out of file descriptors under a high `--threads` count — so the port's true state is unknown and is deliberately *not* reported as closed. Closed ports are not printed; on a normal scan nearly everything is closed and listing them would bury the result. |
 | `unknown` | The service usually found on that port, from a built-in table. `unknown` only means the port is not in the table — it says nothing about what is really running there. |
 | `SSH-2.0-NetRecon_Demo` | The banner: the greeting the service sent back, often naming the software and version. Blank when the service says nothing. |
 
