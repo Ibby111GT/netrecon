@@ -1,12 +1,24 @@
 # port definitions and scan defaults
 # pulled these out of scanner.py to keep things clean
 
-CONNECT_TIMEOUT = 1.0
+import sys
+
+# Linux sends an RST for a closed port on the first SYN, so ConnectionRefusedError
+# lands in a few milliseconds. Windows retransmits the SYN before surfacing
+# WSAECONNREFUSED — measured on loopback at 2.011s, against a TimeoutError at
+# 1.005s — so a 1.0s budget expires first and every closed port is misreported as
+# "filtered". That inverts the tool's headline claim, so the default is
+# platform-dependent. Override per run with --timeout.
+CONNECT_TIMEOUT = 3.0 if sys.platform == "win32" else 1.0
 BANNER_TIMEOUT  = 2.0
 MAX_THREADS     = 200
 
 # upper bound on --threads; past this you are just thrashing the scheduler
 THREAD_LIMIT = 1000
+
+# upper bound on --timeout. Generous enough for a genuinely slow link, low
+# enough that a fat-fingered 1e9 is refused instead of looking like a hang.
+TIMEOUT_LIMIT = 300.0
 
 # widest CIDR block we will expand. /22 is 1024 addresses, which covers a
 # realistic subnet sweep — anything wider is nearly always a typo, and

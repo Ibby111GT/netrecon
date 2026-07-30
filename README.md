@@ -40,6 +40,9 @@ python scanner.py -t 127.0.0.1 --output report.json
 
 # Turn the thread count down on a fragile or rate-limited network
 python scanner.py -t 127.0.0.1 --threads 20
+
+# Give each port longer to answer, over a slow link (default: 1.0s, 3.0s on Windows)
+python scanner.py -t 127.0.0.1 --timeout 5
 ```
 
 Invalid input is rejected before any socket is opened, and the program exits with status 2:
@@ -50,7 +53,28 @@ $ python scanner.py -t 999.1.1.1
 
 $ python scanner.py -t 10.0.0.0/8
 [!] 10.0.0.0/8 covers 16777216 addresses; NetRecon refuses anything wider than /22 (1024 addresses). Split it into smaller blocks.
+
+$ python scanner.py -t 127.0.0.1 --timeout 0
+[!] --timeout must be greater than 0 (got 0.0). A zero or negative budget reports every port as closed.
 ```
+
+### Why `--timeout` defaults differently per platform
+
+The connect budget decides how NetRecon tells a *closed* port from a *filtered*
+one, and the two operating systems disagree about how fast they will admit a
+port is closed.
+
+Linux answers a connection attempt on a closed port with an immediate RST, so
+`ConnectionRefusedError` arrives in milliseconds. Windows retransmits the SYN
+before surfacing `WSAECONNREFUSED` — measured on loopback at **2.011s**, against
+a **1.005s** timeout. With a single 1.0s budget the timeout always won, so on
+Windows every closed port was reported as "filtered", inverting the feature this
+tool advertises. The default is therefore 1.0s on POSIX and 3.0s on Windows, and
+`--timeout` overrides it.
+
+That is also why a zero or negative value is refused rather than passed through:
+it does not raise an error at the socket layer on every platform, it just makes
+every port look closed and hands back a confident, wrong all-clear.
 
 ## How it works (plain English)
 

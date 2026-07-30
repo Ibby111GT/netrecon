@@ -1,3 +1,4 @@
+import errno
 import re
 import socket
 import ipaddress
@@ -108,7 +109,15 @@ def grab_banner(sock, port):
         return None
 
 
-def scan_port(host, port):
+def scan_port(host, port, timeout=None):
+    """Probes one TCP port.
+
+    The three states are distinguished by *how* the connection fails, so the
+    branches below are ordered narrowest first:
+      refused      -> something answered "nothing is listening" -> closed
+      timed out    -> nothing answered at all                   -> filtered
+      unreachable  -> the network rejected the route            -> unreachable
+    """
     result = {
         "host":    host,
         "port":    port,
@@ -117,28 +126,38 @@ def scan_port(host, port):
         "banner":  None,
     }
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(CONNECT_TIMEOUT)
+    s.settimeout(CONNECT_TIMEOUT if timeout is None else timeout)
     try:
         s.connect((host, port))
         result["state"]  = "open"
         result["banner"] = grab_banner(s, port)
-    except TimeoutError:
+    except ConnectionRefusedError:
+        # the host actively refused — definitively nothing listening
+        pass
+    except (TimeoutError, socket.timeout):
         # no answer at all — typically a firewall dropping the packet
         result["state"] = "filtered"
-    except OSError:
-        # refused or unreachable — nothing is listening
-        pass
+    except OSError as exc:
+        # ENETUNREACH / EHOSTUNREACH — the route failed, which is not the same
+        # as a closed port and should not be reported as one
+        if exc.errno in (errno.ENETUNREACH, errno.EHOSTUNREACH):
+            result["state"] = "unreachable"
     finally:
         s.close()
     return result
 
 
-def scan_host(ip, ports, threads=None):
-    """Scans one host and returns the interesting results (open + filtered)."""
+def scan_host(ip, ports, threads=None, timeout=None):
+    """Scans one host and returns the interesting results.
+
+    "Interesting" means anything that is not plainly closed: open, filtered,
+    and unreachable are all returned. Closed ports are dropped, because on a
+    full scan they are the overwhelming majority and none of them is news.
+    """
     threads = threads or MAX_THREADS
     found = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as pool:
-        futs = {pool.submit(scan_port, ip, p): p for p in ports}
+        futs = {pool.submit(scan_port, ip, p, timeout): p for p in ports}
         for f in concurrent.futures.as_completed(futs):
             r = f.result()
             if r["state"] != "closed":
