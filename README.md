@@ -1,5 +1,7 @@
 # NetRecon — TCP Network Scanner
 
+[![CI](https://github.com/Ibby111GT/netrecon/actions/workflows/ci.yml/badge.svg)](https://github.com/Ibby111GT/netrecon/actions/workflows/ci.yml)
+
 A multi-threaded TCP port scanner with banner grabbing, service identification, and CIDR range support. Built with Python's standard library — no external dependencies.
 
 ## Features
